@@ -39,22 +39,6 @@ impl Map {
         Self { tiles, width, height }
     }
 
-    // TODO(human): Implement the `to_char` method.
-    // Given a reference to a Tile, return the ASCII character to display.
-    // Use `match` (Rust's version of Swift's `switch`).
-    //
-    // NetHack traditionally uses:
-    //   Wall  => '#'
-    //   Floor => '.'
-    //   Player => '@'
-    //
-    // Hint: the syntax looks like this:
-    //   fn to_char(tile: &Tile) -> char {
-    //       match tile {
-    //           Tile::Variant => 'x',
-    //           ...
-    //       }
-    //   }
     fn to_char(tile: &Tile) -> char {
         match tile {
             Tile::Wall => '#',
