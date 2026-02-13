@@ -56,10 +56,12 @@ trait GameEntity {
     fn glyph(&self) -> char;
 }
 
-// Player is now its own struct instead of bare x/y fields on Game.
 struct Player {
     x: usize,
     y: usize,
+    hp: i32,
+    max_hp: i32,
+    attack: i32,
 }
 
 // `impl Trait for Type` — like `extension Player: GameEntity` in Swift.
@@ -80,6 +82,8 @@ struct Monster {
     y: usize,
     glyph: char,
     name: String,
+    hp: i32,
+    attack: i32,
 }
 
 impl GameEntity for Monster {
@@ -95,25 +99,26 @@ impl GameEntity for Monster {
 struct Game {
     map: Map,
     player: Player,
-    // Vec<Monster> — a growable array of Monsters, like Swift's [Monster].
     monsters: Vec<Monster>,
+    // A log of combat messages, like "You hit the kobold!"
+    messages: Vec<String>,
 }
 
 impl Game {
     fn new() -> Self {
         let map = Map::new(40, 15);
-        let player = Player { x: 10, y: 7 };
+        let player = Player { x: 10, y: 7, hp: 20, max_hp: 20, attack: 5 };
 
         // In NetHack, 'd' = dog, 'k' = kobold, 'r' = rat.
         // `String::from()` converts a string literal (&str) into an owned String.
         // Like Swift's String("literal") — though in Swift this is usually implicit.
         let monsters = vec![
-            Monster { x: 5,  y: 3,  glyph: 'd', name: String::from("dog") },
-            Monster { x: 15, y: 5,  glyph: 'k', name: String::from("kobold") },
-            Monster { x: 30, y: 10, glyph: 'r', name: String::from("rat") },
+            Monster { x: 5,  y: 3,  glyph: 'd', name: String::from("dog"),    hp: 8,  attack: 2 },
+            Monster { x: 15, y: 5,  glyph: 'k', name: String::from("kobold"), hp: 6,  attack: 3 },
+            Monster { x: 30, y: 10, glyph: 'r', name: String::from("rat"),    hp: 4,  attack: 1 },
         ];
 
-        Self { map, player, monsters }
+        Self { map, player, monsters, messages: Vec::new() }
     }
 
     // Checks if any entity is at position (x, y) and returns its glyph.
@@ -149,10 +154,20 @@ impl Game {
             }
             print!("\r\n");
         }
+
+        // Display player HP and the most recent message.
+        print!("HP: {}/{}\r\n", self.player.hp, self.player.max_hp);
+        if let Some(msg) = self.messages.last() {
+            print!("{}\r\n", msg);
+        }
     }
 
     fn move_player(&mut self, key: KeyCode) {
         let (new_x, new_y) = match key {
+            KeyCode::Char('y') => (self.player.x - 1, self.player.y - 1),
+            KeyCode::Char('u') => (self.player.x + 1, self.player.y - 1),
+            KeyCode::Char('b') => (self.player.x - 1, self.player.y + 1),
+            KeyCode::Char('n') => (self.player.x + 1, self.player.y + 1),
             KeyCode::Char('h') | KeyCode::Left => (self.player.x - 1, self.player.y),
             KeyCode::Char('j') | KeyCode::Down => (self.player.x, self.player.y + 1),
             KeyCode::Char('k') | KeyCode::Up => (self.player.x, self.player.y - 1),
@@ -163,6 +178,36 @@ impl Game {
         if self.map.is_walkable(new_x, new_y) {
             self.player.x = new_x;
             self.player.y = new_y;
+        }
+    }
+
+    // Check if a position is occupied by any monster.
+    fn monster_at(&self, x: usize, y: usize) -> bool {
+        self.monsters.iter().any(|m| m.x == x && m.y == y)
+    }
+
+    fn update_monsters(&mut self) {
+        for i in 0..self.monsters.len() {
+            let new_x = if self.monsters[i].x < self.player.x {
+                self.monsters[i].x + 1
+            } else if self.monsters[i].x > self.player.x {
+                self.monsters[i].x - 1
+            } else {
+                self.monsters[i].x
+            };
+
+            let new_y = if self.monsters[i].y < self.player.y {
+                self.monsters[i].y + 1
+            } else if self.monsters[i].y > self.player.y {
+                self.monsters[i].y - 1
+            } else {
+                self.monsters[i].y
+            };
+
+            if (new_x, new_y) != (self.player.x, self.player.y) && self.map.is_walkable(new_x, new_y) && !self.monster_at(new_x, new_y) {
+                self.monsters[i].x = new_x;
+                self.monsters[i].y = new_y;
+            }
         }
     }
 }
@@ -182,7 +227,10 @@ fn main() -> io::Result<()> {
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Char('q') => break,
-                code => game.move_player(code),
+                code => {
+                    game.move_player(code);
+                    game.update_monsters();
+                }
             }
         }
     }
