@@ -1,7 +1,5 @@
 // CorrodeHack - A NetHack-inspired roguelike in Rust
 
-// `use` imports types from crates/modules, like Swift's `import`.
-// `crossterm` is an external crate for terminal manipulation.
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode},
@@ -50,32 +48,101 @@ impl Map {
     }
 }
 
-// A new struct that holds the entire game state.
-// Notice `player_x`/`player_y` are separate from the Map —
-// the player isn't a tile, they're *on* a tile.
+// --- Traits ---
+// A trait defines shared behavior, like a Swift protocol.
+// Any type that implements GameEntity can be positioned on the map and drawn.
+trait GameEntity {
+    fn pos(&self) -> (usize, usize);
+    fn glyph(&self) -> char;
+}
+
+// Player is now its own struct instead of bare x/y fields on Game.
+struct Player {
+    x: usize,
+    y: usize,
+}
+
+// `impl Trait for Type` — like `extension Player: GameEntity` in Swift.
+impl GameEntity for Player {
+    fn pos(&self) -> (usize, usize) {
+        (self.x, self.y)
+    }
+
+    fn glyph(&self) -> char {
+        '@'
+    }
+}
+
+// `String` is Rust's owned, heap-allocated string — like Swift's `String`.
+// (There's also `&str`, a borrowed string slice — we'll get to that.)
+struct Monster {
+    x: usize,
+    y: usize,
+    glyph: char,
+    name: String,
+}
+
+impl GameEntity for Monster {
+    fn pos(&self) -> (usize, usize) {
+        (self.x, self.y)
+    }
+
+    fn glyph(&self) -> char {
+        self.glyph
+    }
+}
+
 struct Game {
     map: Map,
-    player_x: usize,
-    player_y: usize,
+    player: Player,
+    // Vec<Monster> — a growable array of Monsters, like Swift's [Monster].
+    monsters: Vec<Monster>,
 }
 
 impl Game {
     fn new() -> Self {
-        let map = Map::new(20, 10);
-        Self {
-            map,
-            player_x: 10,
-            player_y: 5,
-        }
+        let map = Map::new(40, 15);
+        let player = Player { x: 10, y: 7 };
+
+        // In NetHack, 'd' = dog, 'k' = kobold, 'r' = rat.
+        // `String::from()` converts a string literal (&str) into an owned String.
+        // Like Swift's String("literal") — though in Swift this is usually implicit.
+        let monsters = vec![
+            Monster { x: 5,  y: 3,  glyph: 'd', name: String::from("dog") },
+            Monster { x: 15, y: 5,  glyph: 'k', name: String::from("kobold") },
+            Monster { x: 30, y: 10, glyph: 'r', name: String::from("rat") },
+        ];
+
+        Self { map, player, monsters }
     }
 
-    // `&self` — immutable borrow. This method can READ game state but not change it.
-    // Like a Swift method on a struct without `mutating`.
+    // Checks if any entity is at position (x, y) and returns its glyph.
+    // Returns `Option<char>` — Rust's version of Swift's `Optional`.
+    //   Some('x') = a value is present
+    //   None      = no value (like Swift's nil)
+    fn entity_at(&self, x: usize, y: usize) -> Option<char> {
+        let (px, py) = self.player.pos();
+        if x == px && y == py {
+            return Some(self.player.glyph());
+        }
+
+        // Iterate over monsters — `&self.monsters` borrows the Vec immutably.
+        for monster in &self.monsters {
+            let (mx, my) = monster.pos();
+            if x == mx && y == my {
+                return Some(monster.glyph());
+            }
+        }
+
+        None
+    }
+
     fn display(&self) {
         for (y, row) in self.map.tiles.iter().enumerate() {
             for (x, tile) in row.iter().enumerate() {
-                if x == self.player_x && y == self.player_y {
-                    print!("@");
+                // `if let` unwraps an Option — like `if let glyph = entity_at(...)` in Swift.
+                if let Some(glyph) = self.entity_at(x, y) {
+                    print!("{}", glyph);
                 } else {
                     print!("{}", Map::to_char(tile));
                 }
@@ -86,40 +153,32 @@ impl Game {
 
     fn move_player(&mut self, key: KeyCode) {
         let (new_x, new_y) = match key {
-            KeyCode::Char('h') | KeyCode::Left => (self.player_x - 1, self.player_y),
-            KeyCode::Char('j') | KeyCode::Down => (self.player_x, self.player_y + 1),
-            KeyCode::Char('k') | KeyCode::Up => (self.player_x, self.player_y - 1),
-            KeyCode::Char('l') | KeyCode::Right => (self.player_x + 1, self.player_y),
+            KeyCode::Char('h') | KeyCode::Left => (self.player.x - 1, self.player.y),
+            KeyCode::Char('j') | KeyCode::Down => (self.player.x, self.player.y + 1),
+            KeyCode::Char('k') | KeyCode::Up => (self.player.x, self.player.y - 1),
+            KeyCode::Char('l') | KeyCode::Right => (self.player.x + 1, self.player.y),
             _ => return,
         };
 
         if self.map.is_walkable(new_x, new_y) {
-            self.player_x = new_x;
-            self.player_y = new_y;
+            self.player.x = new_x;
+            self.player.y = new_y;
         }
     }
 }
 
 fn main() -> io::Result<()> {
-    // Enable "raw mode" — keypresses are sent immediately without Enter.
-    // Like setting the terminal to non-canonical mode in C.
     terminal::enable_raw_mode()?;
 
     let mut game = Game::new();
 
-    // `loop` is Rust's infinite loop — like `while true` but cleaner.
-    // The compiler knows it never exits naturally, which helps with type checking.
     loop {
-        // Clear screen and move cursor to top-left before each frame
         stdout()
             .execute(terminal::Clear(ClearType::All))?
             .execute(cursor::MoveTo(0, 0))?;
 
         game.display();
 
-        // `event::read()` returns a `Result` — Rust's way of handling errors.
-        // The `?` operator unwraps the Ok value or returns the error early,
-        // similar to Swift's `try` but without do/catch blocks.
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Char('q') => break,
@@ -128,7 +187,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // Clean up: restore normal terminal mode before exiting.
     terminal::disable_raw_mode()?;
     Ok(())
 }
