@@ -102,6 +102,7 @@ struct Game {
     monsters: Vec<Monster>,
     // A log of combat messages, like "You hit the kobold!"
     messages: Vec<String>,
+    game_over: bool,
 }
 
 impl Game {
@@ -118,7 +119,7 @@ impl Game {
             Monster { x: 30, y: 10, glyph: 'r', name: String::from("rat"),    hp: 4,  attack: 1 },
         ];
 
-        Self { map, player, monsters, messages: Vec::new() }
+        Self { map, player, monsters, messages: Vec::new(), game_over: false }
     }
 
     // Checks if any entity is at position (x, y) and returns its glyph.
@@ -208,26 +209,43 @@ impl Game {
 
     fn update_monsters(&mut self) {
         for i in 0..self.monsters.len() {
-            let new_x = if self.monsters[i].x < self.player.x {
-                self.monsters[i].x + 1
-            } else if self.monsters[i].x > self.player.x {
-                self.monsters[i].x - 1
+            let monster = &mut self.monsters[i];
+            let new_x = if monster.x < self.player.x {
+                monster.x + 1
+            } else if monster.x > self.player.x {
+                monster.x - 1
             } else {
-                self.monsters[i].x
+                monster.x
             };
 
-            let new_y = if self.monsters[i].y < self.player.y {
-                self.monsters[i].y + 1
-            } else if self.monsters[i].y > self.player.y {
-                self.monsters[i].y - 1
+            let new_y = if monster.y < self.player.y {
+                monster.y + 1
+            } else if monster.y > self.player.y {
+                monster.y - 1
             } else {
-                self.monsters[i].y
+                monster.y
             };
 
-            if (new_x, new_y) != (self.player.x, self.player.y) && self.map.is_walkable(new_x, new_y) && !self.monster_at(new_x, new_y) {
-                self.monsters[i].x = new_x;
-                self.monsters[i].y = new_y;
+            if (new_x, new_y) == (self.player.x, self.player.y) {
+                // Monster bumps into player — attack!
+                self.player.hp -= monster.attack;
+                self.messages.push(format!("The {name} hits you! Took {damage} damage.",
+                                   name=monster.name,
+                                   damage=monster.attack));
+            } else if self.map.is_walkable(new_x, new_y) {
+                // monster_at borrows self. Need to end the monster borrow reference before that.
+                if !self.monster_at(new_x, new_y) {
+                    self.monsters[i].x = new_x;
+                    self.monsters[i].y = new_y;
+                }
             }
+        }
+    }
+
+    fn check_player_death(&mut self) {
+        if self.player.hp <= 0 {
+            self.game_over = true;
+            self.messages.push(format!("You died! Press any key to exit"));
         }
     }
 }
@@ -244,12 +262,18 @@ fn main() -> io::Result<()> {
 
         game.display();
 
+        if game.game_over {
+            event::read()?;
+            break;
+        }
+
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Char('q') => break,
                 code => {
                     game.move_player(code);
                     game.update_monsters();
+                    game.check_player_death();
                 }
             }
         }
