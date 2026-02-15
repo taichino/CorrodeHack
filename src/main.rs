@@ -175,7 +175,9 @@ impl Game {
             _ => return,
         };
 
-        if self.map.is_walkable(new_x, new_y) {
+        if self.monster_at(new_x, new_y) {
+            self.attack_monster_at(new_x, new_y);
+        } else if self.map.is_walkable(new_x, new_y) {
             self.player.x = new_x;
             self.player.y = new_y;
         }
@@ -184,6 +186,24 @@ impl Game {
     // Check if a position is occupied by any monster.
     fn monster_at(&self, x: usize, y: usize) -> bool {
         self.monsters.iter().any(|m| m.x == x && m.y == y)
+    }
+
+    // Called when the player bumps into a monster at (x, y).
+    fn attack_monster_at(&mut self, x: usize, y: usize) {
+        if let Some(target_index) = self.monsters.iter().position(|m| m.x == x && m.y == y) {
+            let target = &mut self.monsters[target_index];
+            target.hp -= self.player.attack;
+            let attack_message= if target.hp > 0 {
+                format!("You hit the {name} ({hp} HP remaining)", name=target.name, hp=target.hp)
+            }
+            else {
+                format!("You defeated the {name}", name=target.name)
+            };
+            self.messages.push(attack_message);
+            if target.hp <= 0 {
+                self.monsters.remove(target_index);
+            }
+        }
     }
 
     fn update_monsters(&mut self) {
